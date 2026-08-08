@@ -16,6 +16,7 @@ export function setAppsScriptUrl(url) {
 }
 
 export const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pub?output=csv';
+export const DEFAULT_SHEET3_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pub?gid=369056435&output=csv';
 
 class Store {
   constructor() {
@@ -181,18 +182,34 @@ class Store {
     this.notify();
 
     try {
-      // Fetch with cache busting
-      const fetchUrl = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
-      const response = await fetch(fetchUrl);
+      // Fetch Sheet 1
+      const fetchUrl1 = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
+      const response1 = await fetch(fetchUrl1);
       
-      if (!response.ok) {
-        throw new Error(`HTTP Error ${response.status}: ${response.statusText}`);
+      let allRecords = [];
+      if (response1.ok) {
+        const csvText1 = await response1.text();
+        const { records: rec1 } = parseCSV(csvText1);
+        allRecords = allRecords.concat(rec1 || []);
       }
 
-      const csvText = await response.text();
-      const { records } = parseCSV(csvText);
+      // Fetch Sheet 3 (Published new students)
+      try {
+        const response3 = await fetch(`${DEFAULT_SHEET3_URL}&_t=${Date.now()}`);
+        if (response3.ok) {
+          const csvText3 = await response3.text();
+          const { records: rec3 } = parseCSV(csvText3);
+          rec3.forEach(s => {
+            if (s.regdNo && !allRecords.some(r => r.regdNo.toLowerCase() === s.regdNo.toLowerCase())) {
+              allRecords.push({ ...s, source: 'Sheet 3 (Published)' });
+            }
+          });
+        }
+      } catch (e3) {
+        console.warn('Sheet 3 fetch optional info:', e3);
+      }
 
-      if (!records || records.length === 0) {
+      if (!allRecords || allRecords.length === 0) {
         throw new Error('No valid student records found in Google Sheet CSV.');
       }
 
@@ -200,12 +217,12 @@ class Store {
       this.syncState.lastSynced = nowStr;
       localStorage.setItem(STORAGE_LAST_SYNC_KEY, nowStr);
 
-      this.setStudents(records, true);
+      this.setStudents(allRecords, true);
       this.syncState.loading = false;
       this.syncState.error = null;
       this.notify();
 
-      return { success: true, count: records.length };
+      return { success: true, count: allRecords.length };
     } catch (err) {
       console.error('Fetch Google Sheet Error:', err);
       this.syncState.loading = false;

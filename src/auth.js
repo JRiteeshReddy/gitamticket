@@ -3,9 +3,12 @@ import { parseCSV } from './csvParser.js';
 const STORAGE_AUTH_SESSION_KEY = 'ticket_scanner_auth_session_v1';
 const STORAGE_SHEET2_URL_KEY = 'ticket_scanner_sheet2_url_v1';
 
-export let sheet2AuthUrl = localStorage.getItem(STORAGE_SHEET2_URL_KEY) || '';
+// Default Published Sheet 2 (gid=1398953584) URL
+export const DEFAULT_SHEET2_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pub?gid=1398953584&output=csv';
 
-// System Fallback Accounts (Instant access offline or before Sheet 2 URL is loaded)
+export let sheet2AuthUrl = localStorage.getItem(STORAGE_SHEET2_URL_KEY) || DEFAULT_SHEET2_URL;
+
+// System Fallback Accounts
 const SYSTEM_ACCOUNTS = [
   {
     username: 'rjulappa@gitam.in',
@@ -33,6 +36,8 @@ class AuthManager {
     this.authUsers = new Map(); // username.toLowerCase() -> userObj
     this.initAccounts();
     this.initSession();
+    // Auto-load Sheet 2 on init
+    this.loadAuthSheet(sheet2AuthUrl);
   }
 
   initAccounts() {
@@ -143,7 +148,7 @@ class AuthManager {
       return { success: false, error: 'Please enter both email and password.' };
     }
 
-    // Always trigger background sync from Sheet 2 if configured
+    // Live sync from Sheet 2 on login submit
     if (sheet2AuthUrl) {
       try {
         await this.loadAuthSheet(sheet2AuthUrl);
