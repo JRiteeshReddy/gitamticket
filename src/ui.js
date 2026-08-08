@@ -1,13 +1,21 @@
 import confetti from 'canvas-confetti';
 import { store, DEFAULT_SHEET_URL } from './store.js';
+import { auth, sheet2AuthUrl } from './auth.js';
 import { playSuccessSound, playAlreadyEnteredSound, playInvalidSound, isAudioMuted, toggleAudioMute } from './sound.js';
 import { initScanner, stopScanner, toggleTorch, switchCamera, resetScanCooldown } from './scanner.js';
 
-let activeTab = 'scanner'; // 'scanner' | 'manual' | 'log' | 'settings'
+let activeTab = 'scanner'; // 'scanner' | 'manual' | 'log'
 let manualSearchQuery = '';
 let logSearchQuery = '';
 
 export function renderApp(rootEl) {
+  if (!auth.isAuthenticated()) {
+    renderLoginScreen(rootEl);
+    return;
+  }
+
+  const currentUser = auth.getCurrentUser();
+
   rootEl.innerHTML = `
     <div class="app-container">
       <!-- HEADER -->
@@ -40,6 +48,13 @@ export function renderApp(rootEl) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.5 2v6h-6M2.5 22v-6h6"></path>
               <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16"></path>
+            </svg>
+          </button>
+          <button id="logoutBtn" class="icon-btn logout-icon-btn" title="Logout (${escapeHtml(currentUser.username)})">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
             </svg>
           </button>
         </div>
@@ -154,8 +169,6 @@ export function renderApp(rootEl) {
             <!-- Dynamically populated -->
           </div>
         </div>
-          </div>
-        </div>
       </main>
 
       <!-- TOP-LEVEL SCAN RESULT OVERLAY MODAL -->
@@ -181,6 +194,105 @@ export function renderApp(rootEl) {
     updateSyncBadge();
     if (activeTab === 'manual') renderManualSearch();
     if (activeTab === 'log') renderHistoryLog();
+  });
+}
+
+/**
+ * Render VIP Login Screen
+ */
+function renderLoginScreen(rootEl) {
+  stopScanner();
+
+  rootEl.innerHTML = `
+    <div class="login-wrapper">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="login-logo">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <h2 class="login-title">GITAM VIP SCANNER</h2>
+          <p class="login-subtitle">Gatekeeper Authentication System</p>
+        </div>
+
+        <form id="loginForm" class="login-form">
+          <div class="form-group">
+            <label for="loginUser">Username / Regd ID</label>
+            <div class="login-input-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <input type="text" id="loginUser" placeholder="Enter username or Regd No" required autocomplete="username">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="loginPass">Password (SHA-256 Encrypted)</label>
+            <div class="login-input-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <input type="password" id="loginPass" placeholder="Enter password" required autocomplete="current-password">
+            </div>
+          </div>
+
+          <div id="loginError" class="login-error hidden"></div>
+
+          <button type="submit" id="loginSubmitBtn" class="login-submit-btn">
+            AUTHENTICATE & LOG IN
+          </button>
+        </form>
+
+        <!-- SHEET 2 AUTH SOURCE ACCORDION -->
+        <details class="sheet2-details">
+          <summary class="sheet2-summary">
+            🔒 Sheet 2 Auth Configuration
+          </summary>
+          <div class="sheet2-body">
+            <label for="sheet2UrlInput">Sheet 2 Auth CSV Published URL</label>
+            <input type="text" id="sheet2UrlInput" class="form-control" placeholder="https://docs.google.com/.../pub?gid=SHEET2_GID&output=csv" value="${sheet2AuthUrl}">
+            <button id="saveSheet2Btn" class="action-btn secondary-btn sheet2-save-btn">Save Sheet 2 URL</button>
+            <p class="sheet2-hint">Passwords are stored in Sheet 2 as SHA-256 hashes for max security.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  `;
+
+  // Attach Login listeners
+  const loginForm = document.getElementById('loginForm');
+  const loginError = document.getElementById('loginError');
+
+  // Pre-load Sheet 2 if configured
+  if (sheet2AuthUrl) {
+    auth.loadAuthSheet(sheet2AuthUrl);
+  }
+
+  document.getElementById('saveSheet2Btn')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('sheet2UrlInput');
+    if (input && input.value.trim()) {
+      const res = await auth.loadAuthSheet(input.value.trim());
+      if (res.success) {
+        alert(`Sheet 2 loaded successfully! Found ${res.count} auth accounts.`);
+      } else {
+        alert(`Could not load Sheet 2: ${res.error || 'Check URL/GID'}`);
+      }
+    }
+  });
+
+  loginForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const userVal = document.getElementById('loginUser').value;
+    const passVal = document.getElementById('loginPass').value;
+
+    const res = await auth.login(userVal, passVal);
+    if (res.success) {
+      renderApp(rootEl);
+    } else {
+      if (loginError) {
+        loginError.textContent = res.error || 'Invalid credentials';
+        loginError.classList.remove('hidden');
+      }
+    }
   });
 }
 
@@ -239,6 +351,14 @@ function updateStats() {
 }
 
 function attachEventListeners(rootEl) {
+  // Logout Button
+  document.getElementById('logoutBtn')?.addEventListener('click', () => {
+    if (confirm('Logout from Ticket Scanner session?')) {
+      auth.logout();
+      renderApp(rootEl);
+    }
+  });
+
   // Tab Switching
   const tabBtns = rootEl.querySelectorAll('.tab-btn');
   tabBtns.forEach(btn => {
