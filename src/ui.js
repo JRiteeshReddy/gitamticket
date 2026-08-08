@@ -368,28 +368,6 @@ function renderLoginScreen(rootEl) {
             AUTHENTICATE & LOG IN
           </button>
         </form>
-
-        <div class="login-accounts-info">
-          <p><strong>Available Logins (Synced from Sheet 2):</strong></p>
-          <ul>
-            <li><code>rjulappa@gitam.in</code> (Ticketing)</li>
-            <li><code>pamarnat@gitam.edu</code> (Admin)</li>
-            <li><code>directorcampuslife_blr@gitam.edu</code> (Super Admin)</li>
-          </ul>
-        </div>
-
-        <!-- SHEET 2 AUTH CSV SOURCE ACCORDION -->
-        <details class="sheet2-details">
-          <summary class="sheet2-summary">
-            🔐 Sheet 2 Auth CSV Link (Google Sheets)
-          </summary>
-          <div class="sheet2-body">
-            <label for="sheet2UrlInput">Sheet 2 Published CSV URL</label>
-            <input type="text" id="sheet2UrlInput" class="form-control" placeholder="https://docs.google.com/.../pub?gid=SHEET2_GID&output=csv" value="${sheet2AuthUrl}">
-            <button id="saveSheet2Btn" class="action-btn secondary-btn sheet2-save-btn">Sync Accounts from Sheet 2</button>
-            <p class="sheet2-hint">Col 1: Email | Col 2: Role (Super Admin / Admin / Security) | Col 3: Password</p>
-          </div>
-        </details>
       </div>
     </div>
   `;
@@ -398,23 +376,10 @@ function renderLoginScreen(rootEl) {
   const loginForm = document.getElementById('loginForm');
   const loginError = document.getElementById('loginError');
 
-  // Load Sheet 2 credentials if URL is configured
+  // Load Sheet 2 credentials in background if configured
   if (sheet2AuthUrl) {
     auth.loadAuthSheet(sheet2AuthUrl);
   }
-
-  document.getElementById('saveSheet2Btn')?.addEventListener('click', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('sheet2UrlInput');
-    if (input && input.value.trim()) {
-      const res = await auth.loadAuthSheet(input.value.trim());
-      if (res.success) {
-        alert(`Sheet 2 accounts synced successfully! Loaded ${res.count} login accounts.`);
-      } else {
-        alert(`Could not load Sheet 2: ${res.error || 'Check GID or Published URL'}`);
-      }
-    }
-  });
 
   loginForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
