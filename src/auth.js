@@ -96,7 +96,6 @@ class AuthManager {
       // Re-init with default accounts first
       this.initAccounts();
 
-      // Find column indices or fallback to positional columns
       const emailCol = headers.findIndex(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('user') || h.toLowerCase().includes('id'));
       const roleCol = headers.findIndex(h => h.toLowerCase().includes('role'));
       const passCol = headers.findIndex(h => h.toLowerCase().includes('pass'));
@@ -134,7 +133,7 @@ class AuthManager {
   }
 
   /**
-   * Login verification against Sheet 2 loaded credentials
+   * Live Login verification against Sheet 2 loaded credentials
    */
   async login(usernameInput, passwordInput) {
     const cleanUser = usernameInput ? usernameInput.trim().toLowerCase() : '';
@@ -142,6 +141,15 @@ class AuthManager {
 
     if (!cleanUser || !plainPassword) {
       return { success: false, error: 'Please enter both email and password.' };
+    }
+
+    // Always trigger background sync from Sheet 2 if configured
+    if (sheet2AuthUrl) {
+      try {
+        await this.loadAuthSheet(sheet2AuthUrl);
+      } catch (e) {
+        console.warn('Sheet 2 sync fallback:', e);
+      }
     }
 
     // Direct match against Sheet 2 accounts
