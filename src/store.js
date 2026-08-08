@@ -8,7 +8,8 @@ const STORAGE_LAST_SYNC_KEY = 'ticket_scanner_last_sync_v1';
 const STORAGE_SHEET3_NEW_STUDENTS_KEY = 'ticket_scanner_sheet3_new_students_v1';
 const STORAGE_APPS_SCRIPT_URL_KEY = 'ticket_scanner_apps_script_url_v1';
 
-export let appsScriptUrl = localStorage.getItem(STORAGE_APPS_SCRIPT_URL_KEY) || '';
+export const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz-WbEenFW1lnKrl8mQY8tuvoTYBXw4bC1CFg5y3_foGk7rz9zj8JdQxdTHyFe21_gC/exec';
+export let appsScriptUrl = localStorage.getItem(STORAGE_APPS_SCRIPT_URL_KEY) || DEFAULT_APPS_SCRIPT_URL;
 
 export function setAppsScriptUrl(url) {
   appsScriptUrl = url;
