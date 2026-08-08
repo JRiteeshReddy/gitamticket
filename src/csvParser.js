@@ -5,6 +5,11 @@
 export function parseCSV(csvText) {
   if (!csvText || typeof csvText !== 'string') return { headers: [], records: [] };
 
+  // Detect HTML table from Google pubhtml endpoint
+  if (csvText.includes('<tr') || csvText.includes('<table')) {
+    return parseHTMLTable(csvText);
+  }
+
   const lines = [];
   let currentLine = [];
   let currentField = '';
@@ -101,6 +106,87 @@ export function parseCSV(csvText) {
     };
 
     records.push(record);
+  }
+
+  return { headers, records };
+}
+
+/**
+ * Parses Google pubhtml HTML document table rows directly (0-second cache delay)
+ */
+export function parseHTMLTable(htmlText) {
+  if (!htmlText) return { headers: [], records: [] };
+
+  const lines = [];
+  const trMatches = htmlText.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || [];
+
+  trMatches.forEach(trHtml => {
+    const tdMatches = trHtml.match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
+    const cellValues = tdMatches.map(td => {
+      return td
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&quot;/g, '"')
+        .trim();
+    });
+
+    if (cellValues.some(v => v !== '')) {
+      lines.push(cellValues);
+    }
+  });
+
+  if (lines.length === 0) return { headers: [], records: [] };
+
+  // Find header row (the row containing "Regd" or "email")
+  let headerIndex = lines.findIndex(line => 
+    line.some(cell => cell.toLowerCase().includes('regd') || cell.toLowerCase().includes('email'))
+  );
+
+  if (headerIndex === -1) {
+    headerIndex = 0;
+  }
+
+  const rawHeaders = lines[headerIndex];
+  const headers = rawHeaders.map(h => h.trim());
+
+  const regdIndex = headers.findIndex(h => h.toLowerCase().includes('regd'));
+  const nameIndex = headers.findIndex(h => h.toLowerCase().includes('name'));
+  const emailIndex = headers.findIndex(h => h.toLowerCase().includes('email'));
+  const mobileIndex = headers.findIndex(h => h.toLowerCase().includes('mobile'));
+  const campusIndex = headers.findIndex(h => h.toLowerCase().includes('education') || h.toLowerCase().includes('campus'));
+  const eventIndex = headers.findIndex(h => h.toLowerCase().includes('participation') || h.toLowerCase().includes('event'));
+  const statusIndex = headers.findIndex(h => h.toLowerCase() === 'status');
+
+  const records = [];
+  const seenRegd = new Set();
+
+  for (let i = headerIndex + 1; i < lines.length; i++) {
+    const row = lines[i];
+    if (!row || row.length === 0) continue;
+
+    let rawRegd = regdIndex !== -1 && row[regdIndex] ? row[regdIndex].trim() : '';
+    if (!rawRegd) {
+      rawRegd = row[emailIndex !== -1 ? emailIndex : 0] || `ROW_${i}`;
+    }
+
+    const regdNo = rawRegd.replace(/\s+/g, '');
+    if (!regdNo || seenRegd.has(regdNo)) continue;
+    seenRegd.add(regdNo);
+
+    records.push({
+      regdNo: regdNo,
+      name: (nameIndex !== -1 && row[nameIndex]) ? row[nameIndex].trim() : 'Unknown Name',
+      email: (emailIndex !== -1 && row[emailIndex]) ? row[emailIndex].trim() : '',
+      mobile: (mobileIndex !== -1 && row[mobileIndex]) ? row[mobileIndex].trim() : '',
+      campusInfo: (campusIndex !== -1 && row[campusIndex]) ? row[campusIndex].trim() : '',
+      event: (eventIndex !== -1 && row[eventIndex]) ? row[eventIndex].trim() : '',
+      status: (statusIndex !== -1 && row[statusIndex]) ? row[statusIndex].trim() : 'Approved',
+      rawRow: row
+    });
   }
 
   return { headers, records };

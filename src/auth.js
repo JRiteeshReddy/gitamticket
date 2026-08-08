@@ -3,8 +3,8 @@ import { parseCSV } from './csvParser.js';
 const STORAGE_AUTH_SESSION_KEY = 'ticket_scanner_auth_session_v1';
 const STORAGE_SHEET2_URL_KEY = 'ticket_scanner_sheet2_url_v1';
 
-// Default Published Sheet 2 (gid=1398953584) URL
-export const DEFAULT_SHEET2_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pub?gid=1398953584&output=csv';
+// Default Published Sheet 2 (gid=1398953584) URL (Instant pubhtml endpoint)
+export const DEFAULT_SHEET2_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pubhtml/sheet?headers=false&gid=1398953584';
 
 export let sheet2AuthUrl = localStorage.getItem(STORAGE_SHEET2_URL_KEY) || DEFAULT_SHEET2_URL;
 
