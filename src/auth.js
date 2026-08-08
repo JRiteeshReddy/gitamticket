@@ -29,6 +29,18 @@ const SYSTEM_ACCOUNTS = [
     name: 'Director Campus Life (BLR)',
     role: 'super_admin',
     password: 'DoCLEncoreGitam'
+  },
+  {
+    username: 'jriteeshreddy@gmail.com',
+    name: 'J. Riteesh Reddy',
+    role: 'super_admin',
+    password: '110120'
+  },
+  {
+    username: 'jriteeshredy@gmail.com',
+    name: 'J. Riteesh Reddy',
+    role: 'super_admin',
+    password: '110120'
   }
 ];
 
@@ -114,13 +126,21 @@ class AuthManager {
           else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
           else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket') || cleanRoleStr.includes('gatekeeper')) normalizedRole = 'ticketing';
 
-          this.authUsers.set(cleanEmail, {
+          const accObj = {
             username: email.trim(),
             password: cleanPass,
             role: normalizedRole,
             rawRole: roleRaw.trim(),
             name: email.trim().split('@')[0]
-          });
+          };
+
+          this.authUsers.set(cleanEmail, accObj);
+
+          // Support email typo alias for jriteeshreddy@gmail.com / jriteeshredy@gmail.com
+          if (cleanEmail.includes('jriteeshred')) {
+            this.authUsers.set('jriteeshreddy@gmail.com', accObj);
+            this.authUsers.set('jriteeshredy@gmail.com', accObj);
+          }
         }
       });
     };
