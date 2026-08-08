@@ -119,12 +119,13 @@ class AuthManager {
           let normalizedRole = 'ticketing';
           if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
           else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
-          else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket')) normalizedRole = 'ticketing';
+          else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket') || cleanRoleStr.includes('gatekeeper')) normalizedRole = 'ticketing';
 
           this.authUsers.set(cleanEmail, {
             username: email.trim(),
             password: cleanPass,
             role: normalizedRole,
+            rawRole: roleRaw.trim(), // Exact role string from Sheet 2
             name: email.trim().split('@')[0]
           });
         }
@@ -166,6 +167,7 @@ class AuthManager {
           username: userObj.username,
           name: userObj.name,
           role: userObj.role || 'ticketing',
+          rawRole: userObj.rawRole || userObj.role || 'Ticketing',
           loginTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
         this.currentUser = session;

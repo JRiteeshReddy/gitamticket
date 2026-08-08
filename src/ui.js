@@ -34,7 +34,7 @@ export function renderApp(rootEl) {
           <div>
             <h1 class="brand-title">Gitam Ticket Scanner</h1>
             <div class="brand-sub" id="sheetSyncBadge">
-              <span class="role-pill role-${currentUser.role}">${getRoleLabel(currentUser.role)}</span>
+              <span class="role-pill role-${currentUser.role}">${getRoleLabel(currentUser)}</span>
               <span class="pulse-dot"></span> <span id="syncStatusText">Connecting...</span>
             </div>
           </div>
@@ -319,9 +319,20 @@ export function renderApp(rootEl) {
   });
 }
 
-function getRoleLabel(role) {
-  if (role === 'super_admin') return 'Super Admin';
-  if (role === 'admin') return 'Admin';
+function getRoleLabel(user) {
+  if (!user) return 'Ticketing';
+  if (typeof user === 'string') {
+    if (user === 'super_admin') return 'Super Admin';
+    if (user === 'admin') return 'Admin';
+    return 'Ticketing';
+  }
+  if (user.rawRole) {
+    const raw = user.rawRole.trim();
+    if (raw.toLowerCase() === 'security') return 'Security';
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  if (user.role === 'super_admin') return 'Super Admin';
+  if (user.role === 'admin') return 'Admin';
   return 'Ticketing';
 }
 
