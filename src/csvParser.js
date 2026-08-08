@@ -53,8 +53,8 @@ export function parseCSV(csvText) {
 
   if (lines.length === 0) return { headers: [], records: [] };
 
-  // Find header row (the row containing "Regd" or "Regd no.")
-  let headerIndex = lines.findIndex(line => 
+  // Find header row (a row containing "Regd" or "regd")
+  let headerIndex = lines.findIndex(line =>
     line.some(cell => cell.toLowerCase().includes('regd'))
   );
 

@@ -16,12 +16,15 @@ export function setAppsScriptUrl(url) {
   localStorage.setItem(STORAGE_APPS_SCRIPT_URL_KEY, url);
 }
 
-export const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pubhtml/sheet?headers=false&gid=0';
+// Official student data sheet (Esperanza - Encore 26)
+export const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQDXuHhjFIWg1L6uQI8Q3L926DJ9gUbC48jN1olwzA2EtdGGGSipqgh2hHLfYbdI1eHuh6BuFeHKEnF/pub?output=csv';
 export const DEFAULT_SHEET3_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pubhtml/sheet?headers=false&gid=369056435';
 
 class Store {
   constructor() {
-    this.sheetUrl = localStorage.getItem(STORAGE_SHEET_URL_KEY) || DEFAULT_SHEET_URL;
+    // Always use the default sheet URL (ignores any stale URL saved in localStorage)
+    this.sheetUrl = DEFAULT_SHEET_URL;
+    localStorage.setItem(STORAGE_SHEET_URL_KEY, DEFAULT_SHEET_URL);
     this.students = [];
     this.sheet3NewStudents = []; // Admin created students (Sheet 3)
     this.studentMap = new Map(); // regdNo -> student
