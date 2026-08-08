@@ -439,10 +439,10 @@ function updateSyncBadge() {
     syncBadge.textContent = 'Syncing Sheet...';
     syncBadge.className = 'status-syncing';
   } else if (state.error) {
-    syncBadge.textContent = `Sync Error (Using Cache: ${state.totalCount})`;
+    syncBadge.textContent = `Sync Error (Cached: ${state.totalCount})`;
     syncBadge.className = 'status-error';
   } else {
-    syncBadge.textContent = `Synced (${state.totalCount} Students)`;
+    syncBadge.textContent = `Live Auto-Sync • ${state.totalCount} Tickets`;
     syncBadge.className = 'status-synced';
   }
 }

@@ -37,11 +37,19 @@ class Store {
       loading: false,
       error: null,
       lastSynced: localStorage.getItem(STORAGE_LAST_SYNC_KEY) || null,
-      totalCount: 0
+      totalCount: 0,
+      autoSyncActive: true,
+      lastAutoSyncTime: Date.now()
     };
     
     this.lastResult = null;
+    this.broadcastChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('gitam_ticket_sync_v1') : null;
+    this.autoSyncTimer = null;
+    this.isAutoSyncing = false;
+
     this.init();
+    this.setupCrossTabSync();
+    this.startAutoSync(5000); // 5-second background auto-update loop
   }
 
   init() {
@@ -77,6 +85,69 @@ class Store {
       }
     } catch (e) {
       console.error('Failed to load cached students:', e);
+    }
+  }
+
+  setupCrossTabSync() {
+    // BroadcastChannel for instant local tab sync
+    if (this.broadcastChannel) {
+      this.broadcastChannel.onmessage = (event) => {
+        if (event.data) {
+          this.handleCrossTabEvent(event.data);
+        }
+      };
+    }
+
+    // Fallback: window storage listener for cross-tab sync
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key === STORAGE_CHECKED_IN_KEY && e.newValue) {
+          try {
+            const parsed = JSON.parse(e.newValue);
+            this.checkedInMap.clear();
+            Object.entries(parsed).forEach(([regdNo, entry]) => {
+              this.checkedInMap.set(regdNo, entry);
+            });
+            this.notify();
+          } catch (err) {
+            console.warn('Storage sync error:', err);
+          }
+        }
+      });
+    }
+  }
+
+  broadcastSync(action, payload) {
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage({ action, payload, time: Date.now() });
+      } catch (e) {
+        console.warn('BroadcastChannel postMessage failed:', e);
+      }
+    }
+  }
+
+  handleCrossTabEvent({ action, payload }) {
+    if (action === 'CHECK_IN' && payload && payload.regdNo) {
+      const key = payload.regdNo.toLowerCase();
+      this.checkedInMap.set(key, payload.entry);
+      this.notify();
+    } else if (action === 'UNDO_CHECK_IN' && payload && payload.regdNo) {
+      const key = payload.regdNo.toLowerCase();
+      this.checkedInMap.delete(key);
+      this.notify();
+    } else if (action === 'CLEAR_CHECK_INS') {
+      this.checkedInMap.clear();
+      this.lastResult = null;
+      this.notify();
+    } else if (action === 'SHEET3_NEW_STUDENT' && payload && payload.student) {
+      const s = payload.student;
+      if (!this.sheet3NewStudents.some(existing => existing.regdNo.toLowerCase() === s.regdNo.toLowerCase())) {
+        this.sheet3NewStudents.push(s);
+      }
+      this.setStudents(this.students, true);
+    } else if (action === 'SHEET_DATA_UPDATED') {
+      this.loadSheetDataSilent();
     }
   }
 
@@ -156,6 +227,7 @@ class Store {
     
     this.syncState.totalCount = this.students.length;
     this.notify();
+    this.broadcastSync('SHEET3_NEW_STUDENT', { student: newStudent });
 
     // Post to Google Apps Script Web App if configured to append to Sheet 3
     if (appsScriptUrl) {
@@ -175,6 +247,111 @@ class Store {
     }
 
     return { success: true, student: newStudent };
+  }
+
+  startAutoSync(intervalMs = 5000) {
+    if (this.autoSyncTimer) clearInterval(this.autoSyncTimer);
+    this.syncState.autoSyncActive = true;
+
+    this.autoSyncTimer = setInterval(async () => {
+      if (this.isAutoSyncing) return;
+      this.isAutoSyncing = true;
+      try {
+        await Promise.allSettled([
+          this.loadSheetDataSilent(),
+          this.syncRemoteCheckIns()
+        ]);
+        this.syncState.lastAutoSyncTime = Date.now();
+        this.notify();
+      } catch (err) {
+        console.warn('Auto-sync iteration warning:', err);
+      } finally {
+        this.isAutoSyncing = false;
+      }
+    }, intervalMs);
+  }
+
+  async loadSheetDataSilent() {
+    try {
+      const fetchUrl1 = this.sheetUrl.includes('?') ? `${this.sheetUrl}&_t=${Date.now()}` : `${this.sheetUrl}?_t=${Date.now()}`;
+      const response1 = await fetch(fetchUrl1);
+      let allRecords = [];
+
+      if (response1.ok) {
+        const csvText1 = await response1.text();
+        const { records: rec1 } = parseCSV(csvText1);
+        allRecords = allRecords.concat(rec1 || []);
+      }
+
+      try {
+        const response3 = await fetch(`${DEFAULT_SHEET3_URL}&_t=${Date.now()}`);
+        if (response3.ok) {
+          const csvText3 = await response3.text();
+          const { records: rec3 } = parseCSV(csvText3);
+          rec3.forEach(s => {
+            if (s.regdNo && !allRecords.some(r => r.regdNo.toLowerCase() === s.regdNo.toLowerCase())) {
+              allRecords.push({ ...s, source: 'Sheet 3 (Published)' });
+            }
+          });
+        }
+      } catch (e3) {}
+
+      if (allRecords && allRecords.length > 0) {
+        const currentCount = this.students.length;
+        let hasNewEntry = allRecords.length !== (currentCount - this.sheet3NewStudents.length);
+
+        if (!hasNewEntry) {
+          for (const r of allRecords) {
+            if (r.regdNo && !this.studentMap.has(r.regdNo.toLowerCase())) {
+              hasNewEntry = true;
+              break;
+            }
+          }
+        }
+
+        if (hasNewEntry) {
+          this.setStudents(allRecords, true);
+          this.syncState.lastSynced = new Date().toLocaleString();
+          localStorage.setItem(STORAGE_LAST_SYNC_KEY, this.syncState.lastSynced);
+        }
+      }
+    } catch (err) {
+      console.warn('Silent sheet fetch warning:', err);
+    }
+  }
+
+  async syncRemoteCheckIns() {
+    if (!appsScriptUrl) return;
+    try {
+      const res = await fetch(`${appsScriptUrl}?action=getCheckIns&_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.checkIns && Array.isArray(data.checkIns)) {
+          let updated = false;
+          data.checkIns.forEach(item => {
+            const regdNo = String(item.regdNo || item.regd || '').trim();
+            if (!regdNo) return;
+            const key = regdNo.toLowerCase();
+            if (!this.checkedInMap.has(key)) {
+              const matchedStudent = this.findStudent(regdNo);
+              const entry = {
+                regdNo: regdNo,
+                student: matchedStudent || item.student || { regdNo, name: item.name || 'Remote Check-in' },
+                timestamp: item.timestamp || new Date().toISOString(),
+                scannedAt: item.scannedAt || item.time || new Date().toLocaleTimeString(),
+                method: item.method || 'Remote Sync'
+              };
+              this.checkedInMap.set(key, entry);
+              updated = true;
+            }
+          });
+          if (updated) {
+            this.saveCheckedInState();
+            this.notify();
+          }
+        }
+      }
+    } catch (e) {}
   }
 
   async loadSheetData(url = this.sheetUrl) {
@@ -331,6 +508,23 @@ class Store {
 
       this.checkedInMap.set(lookupKey, entry);
       this.saveCheckedInState();
+      this.broadcastSync('CHECK_IN', { regdNo: student.regdNo, entry });
+
+      // Sync to Apps Script
+      if (appsScriptUrl) {
+        fetch(appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'checkIn',
+            regdNo: student.regdNo,
+            scannedAt: formattedTime,
+            method: method,
+            timestamp: entry.timestamp
+          })
+        }).catch(err => console.warn('Apps Script check-in sync error:', err));
+      }
 
       const result = {
         type: 'SUCCESS',
@@ -374,21 +568,31 @@ class Store {
     if (!regdNo) return false;
     const cleanKey = String(regdNo).trim().toLowerCase();
     
-    // 1. Direct lookup
-    if (this.checkedInMap.has(cleanKey)) {
-      this.checkedInMap.delete(cleanKey);
+    const removeAndNotify = (key) => {
+      this.checkedInMap.delete(key);
       this.saveCheckedInState();
+      this.broadcastSync('UNDO_CHECK_IN', { regdNo: key });
+      if (appsScriptUrl) {
+        fetch(appsScriptUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'undoCheckIn', regdNo: key })
+        }).catch(err => console.warn('Apps Script undo sync error:', err));
+      }
       this.notify();
       return true;
+    };
+
+    // 1. Direct lookup
+    if (this.checkedInMap.has(cleanKey)) {
+      return removeAndNotify(cleanKey);
     }
 
     // 2. Fallback search across checkedInMap keys
     for (const key of this.checkedInMap.keys()) {
       if (key === cleanKey || key.replace(/\D/g, '') === cleanKey.replace(/\D/g, '')) {
-        this.checkedInMap.delete(key);
-        this.saveCheckedInState();
-        this.notify();
-        return true;
+        return removeAndNotify(key);
       }
     }
 
@@ -398,6 +602,7 @@ class Store {
   clearAllCheckIns() {
     this.checkedInMap.clear();
     this.saveCheckedInState();
+    this.broadcastSync('CLEAR_CHECK_INS', {});
     this.lastResult = null;
     this.notify();
   }

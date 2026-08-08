@@ -134,6 +134,17 @@ html, body {
   animation: pulseGold 2s infinite ease-in-out;
 }
 
+.status-synced {
+  color: var(--gold-bright);
+}
+.status-syncing {
+  color: var(--gold-champagne);
+  opacity: 0.8;
+}
+.status-error {
+  color: var(--alert-danger-text);
+}
+
 @keyframes pulseGold {
   0% { transform: scale(0.9); opacity: 0.6; }
   50% { transform: scale(1.25); opacity: 1; }
