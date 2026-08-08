@@ -6,6 +6,14 @@ const STORAGE_CHECKED_IN_KEY = 'ticket_scanner_checked_in_v2';
 const STORAGE_LAST_SYNC_KEY = 'ticket_scanner_last_sync_v1';
 
 const STORAGE_SHEET3_NEW_STUDENTS_KEY = 'ticket_scanner_sheet3_new_students_v1';
+const STORAGE_APPS_SCRIPT_URL_KEY = 'ticket_scanner_apps_script_url_v1';
+
+export let appsScriptUrl = localStorage.getItem(STORAGE_APPS_SCRIPT_URL_KEY) || '';
+
+export function setAppsScriptUrl(url) {
+  appsScriptUrl = url;
+  localStorage.setItem(STORAGE_APPS_SCRIPT_URL_KEY, url);
+}
 
 export const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pub?output=csv';
 
@@ -135,13 +143,6 @@ class Store {
       createdAt: new Date().toISOString()
     };
 
-    this.sheet3NewStudents.push(newStudent);
-    try {
-      localStorage.setItem(STORAGE_SHEET3_NEW_STUDENTS_KEY, JSON.stringify(this.sheet3NewStudents));
-    } catch (e) {
-      console.error('Failed to save Sheet 3 student:', e);
-    }
-
     // Include in active student list immediately
     this.students.push(newStudent);
     this.studentMap.set(cleanRegd.toLowerCase(), newStudent);
@@ -150,6 +151,24 @@ class Store {
     
     this.syncState.totalCount = this.students.length;
     this.notify();
+
+    // Post to Google Apps Script Web App if configured to append to Sheet 3
+    if (appsScriptUrl) {
+      fetch(appsScriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'addStudent',
+          regdNo: newStudent.regdNo,
+          name: newStudent.name,
+          email: newStudent.email,
+          mobile: newStudent.mobile,
+          campusInfo: newStudent.campusInfo
+        })
+      }).catch(err => console.warn('Failed to sync to Apps Script Sheet 3:', err));
+    }
+
     return { success: true, student: newStudent };
   }
 

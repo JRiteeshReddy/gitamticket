@@ -278,6 +278,17 @@ export function renderApp(rootEl) {
                 `).join('')}
               </div>
             </div>
+
+            <!-- GOOGLE APPS SCRIPT DIRECT SYNC CONFIG -->
+            <details class="sheet2-details" style="margin-top: 15px;">
+              <summary class="sheet2-summary">⚡ Live Google Sheet Write Webhook (Sheet 2 & Sheet 3)</summary>
+              <div class="sheet2-body">
+                <label for="appsScriptUrlInput">Google Apps Script Web App Deployment URL</label>
+                <input type="text" id="appsScriptUrlInput" class="form-control" placeholder="https://script.google.com/macros/s/.../exec" value="${localStorage.getItem('ticket_scanner_apps_script_url_v1') || ''}">
+                <button id="saveAppsScriptBtn" class="action-btn secondary-btn sheet2-save-btn">Save Webhook URL</button>
+                <p class="sheet2-hint">Automatically appends new logins to Sheet 2 and new participants to Sheet 3 in your live Google Sheet.</p>
+              </div>
+            </details>
           </div>
         </div>` : ''}
       </main>
@@ -607,6 +618,19 @@ function attachEventListeners(rootEl) {
         addAdminMsg.textContent = res.error || 'Failed to create admin';
         addAdminMsg.classList.remove('hidden');
       }
+    }
+  });
+
+  // Save Google Apps Script URL
+  document.getElementById('saveAppsScriptBtn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const url = document.getElementById('appsScriptUrlInput')?.value.trim();
+    if (url) {
+      localStorage.setItem('ticket_scanner_apps_script_url_v1', url);
+      alert('Google Apps Script Live Webhook URL saved successfully!');
+    } else {
+      localStorage.removeItem('ticket_scanner_apps_script_url_v1');
+      alert('Webhook URL cleared.');
     }
   });
 

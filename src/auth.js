@@ -216,6 +216,23 @@ class AuthManager {
       console.error('Failed to save custom admin account:', e);
     }
 
+    // Sync to Google Apps Script Sheet 2 if configured
+    const scriptUrl = localStorage.getItem('ticket_scanner_apps_script_url_v1');
+    if (scriptUrl) {
+      fetch(scriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'addAdmin',
+          username: newAcc.username,
+          passwordHash: newAcc.passwordHash,
+          role: newAcc.role,
+          name: newAcc.name
+        })
+      }).catch(err => console.warn('Failed to sync to Apps Script Sheet 2:', err));
+    }
+
     return { success: true, account: newAcc };
   }
 
