@@ -84,10 +84,6 @@ export function renderApp(rootEl) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
           History Log
         </button>
-        <button class="tab-btn" data-tab="settings">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Settings
-        </button>
       </nav>
 
       <!-- MAIN CONTENT VIEW -->
@@ -158,36 +154,6 @@ export function renderApp(rootEl) {
             <!-- Dynamically populated -->
           </div>
         </div>
-
-        <!-- SETTINGS TAB -->
-        <div id="settingsTab" class="tab-content">
-          <div class="settings-card">
-            <h3 class="settings-title">Google Sheet Data Source</h3>
-            <p class="settings-desc">Provide the published Google Sheet CSV URL containing student registration data.</p>
-            
-            <div class="form-group">
-              <label for="sheetUrlInput">Google Sheet CSV Published URL</label>
-              <textarea id="sheetUrlInput" rows="3" class="form-control">${store.sheetUrl}</textarea>
-            </div>
-
-            <div class="settings-actions">
-              <button id="saveSheetUrlBtn" class="action-btn primary-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                Save & Fetch Live Data
-              </button>
-              <button id="resetDefaultUrlBtn" class="action-btn secondary-btn">Reset Default URL</button>
-            </div>
-
-            <div class="column-mapping-info">
-              <h4>Required Columns in Google Sheet</h4>
-              <ul>
-                <li><code>Regd no.</code> (Column D - Student Registration ID)</li>
-                <li><code>Name</code> (Column E - Student Full Name)</li>
-                <li><code>Email</code> (Column F - Gitam Student Email)</li>
-                <li><code>Mobile</code> (Column G - Contact Mobile Number)</li>
-                <li><code>Education/Campus Info</code> (Column K - Department / Class)</li>
-              </ul>
-            </div>
           </div>
         </div>
       </main>
@@ -354,23 +320,6 @@ function attachEventListeners(rootEl) {
   document.getElementById('clearSessionBtn')?.addEventListener('click', () => {
     if (confirm('Are you sure you want to reset all check-in attendance data for this session?')) {
       store.clearAllCheckIns();
-    }
-  });
-
-  // Settings Buttons
-  document.getElementById('saveSheetUrlBtn')?.addEventListener('click', () => {
-    const urlInput = document.getElementById('sheetUrlInput');
-    if (urlInput && urlInput.value.trim()) {
-      store.loadSheetData(urlInput.value.trim());
-      alert('Google Sheet URL saved! Loading latest student data...');
-    }
-  });
-
-  document.getElementById('resetDefaultUrlBtn')?.addEventListener('click', () => {
-    const urlInput = document.getElementById('sheetUrlInput');
-    if (urlInput) {
-      urlInput.value = DEFAULT_SHEET_URL;
-      store.loadSheetData(DEFAULT_SHEET_URL);
     }
   });
 
