@@ -4,8 +4,9 @@ import { appsScriptUrl } from './store.js';
 const STORAGE_AUTH_SESSION_KEY = 'ticket_scanner_auth_session_v1';
 const STORAGE_SHEET2_URL_KEY = 'ticket_scanner_sheet2_url_v1';
 
-// Default Published Sheet 2 (gid=1398953584) URL (Instant pubhtml endpoint)
-export const DEFAULT_SHEET2_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pubhtml/sheet?headers=false&gid=1398953584';
+// New Dedicated Auth Spreadsheet URL provided by user
+export const DEFAULT_SHEET2_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7TtlcAMwOGBbZtXjEOUvEDZtudEOv2pBmERxsJdwggPSFB_nnl4ggZw0sBT-ZiMXvQNAymngwngiZ/pubhtml/sheet?headers=false&gid=0';
+export const DEFAULT_SHEET2_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7TtlcAMwOGBbZtXjEOUvEDZtudEOv2pBmERxsJdwggPSFB_nnl4ggZw0sBT-ZiMXvQNAymngwngiZ/pub?output=csv';
 
 export let sheet2AuthUrl = localStorage.getItem(STORAGE_SHEET2_URL_KEY) || DEFAULT_SHEET2_URL;
 
@@ -90,46 +91,56 @@ class AuthManager {
     // Re-init with default accounts first
     this.initAccounts();
 
-    // 1. Fetch from pubhtml Sheet 2 endpoint
+    const parseAndSet = (csvOrHtmlText) => {
+      if (!csvOrHtmlText) return;
+      const { headers, records } = parseCSV(csvOrHtmlText);
+      const emailCol = headers.findIndex(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('user') || h.toLowerCase().includes('id'));
+      const roleCol = headers.findIndex(h => h.toLowerCase().includes('role'));
+      const passCol = headers.findIndex(h => h.toLowerCase().includes('pass'));
+
+      records.forEach(r => {
+        const rawRow = r.rawRow || [];
+        const email = emailCol !== -1 ? rawRow[emailCol] : (rawRow[0] || r.email || r.regdNo || '');
+        const roleRaw = roleCol !== -1 ? rawRow[roleCol] : (rawRow[1] || 'security');
+        const password = passCol !== -1 ? rawRow[passCol] : (rawRow[2] || rawRow[1] || '');
+
+        if (email && password) {
+          const cleanEmail = email.trim().toLowerCase();
+          const cleanRoleStr = roleRaw.trim().toLowerCase();
+          const cleanPass = password.trim();
+
+          let normalizedRole = 'ticketing';
+          if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
+          else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
+          else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket') || cleanRoleStr.includes('gatekeeper')) normalizedRole = 'ticketing';
+
+          this.authUsers.set(cleanEmail, {
+            username: email.trim(),
+            password: cleanPass,
+            role: normalizedRole,
+            rawRole: roleRaw.trim(),
+            name: email.trim().split('@')[0]
+          });
+        }
+      });
+    };
+
+    // Parallel fetch pubhtml & pub CSV endpoints for maximum speed & reliability
     try {
-      const fetchUrl = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
-      const response = await fetch(fetchUrl);
-      if (response.ok) {
-        const csvText = await response.text();
-        const { headers, records } = parseCSV(csvText);
+      const endpoints = [
+        url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`,
+        DEFAULT_SHEET2_CSV_URL.includes('?') ? `${DEFAULT_SHEET2_CSV_URL}&_t=${Date.now()}` : `${DEFAULT_SHEET2_CSV_URL}?_t=${Date.now()}`
+      ];
 
-        const emailCol = headers.findIndex(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('user') || h.toLowerCase().includes('id'));
-        const roleCol = headers.findIndex(h => h.toLowerCase().includes('role'));
-        const passCol = headers.findIndex(h => h.toLowerCase().includes('pass'));
-
-        records.forEach(r => {
-          const rawRow = r.rawRow || [];
-          const email = emailCol !== -1 ? rawRow[emailCol] : (rawRow[0] || r.email || r.regdNo || '');
-          const roleRaw = roleCol !== -1 ? rawRow[roleCol] : (rawRow[1] || 'security');
-          const password = passCol !== -1 ? rawRow[passCol] : (rawRow[2] || rawRow[1] || '');
-
-          if (email && password) {
-            const cleanEmail = email.trim().toLowerCase();
-            const cleanRoleStr = roleRaw.trim().toLowerCase();
-            const cleanPass = password.trim();
-
-            let normalizedRole = 'ticketing';
-            if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
-            else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
-            else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket') || cleanRoleStr.includes('gatekeeper')) normalizedRole = 'ticketing';
-
-            this.authUsers.set(cleanEmail, {
-              username: email.trim(),
-              password: cleanPass,
-              role: normalizedRole,
-              rawRole: roleRaw.trim(),
-              name: email.trim().split('@')[0]
-            });
-          }
-        });
+      const responses = await Promise.allSettled(endpoints.map(ep => fetch(ep)));
+      for (const res of responses) {
+        if (res.status === 'fulfilled' && res.value.ok) {
+          const text = await res.value.text();
+          parseAndSet(text);
+        }
       }
     } catch (err) {
-      console.warn('pubhtml Sheet 2 fetch fallback:', err);
+      console.warn('Auth sheet parallel fetch fallback:', err);
     }
 
     // 2. Fetch from Apps Script Live Memory Endpoint (0-second delay for newly added accounts in Sheet 2)
