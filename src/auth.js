@@ -2,41 +2,28 @@ import { parseCSV } from './csvParser.js';
 
 const STORAGE_AUTH_SESSION_KEY = 'ticket_scanner_auth_session_v1';
 const STORAGE_SHEET2_URL_KEY = 'ticket_scanner_sheet2_url_v1';
-const STORAGE_CUSTOM_ADMINS_KEY = 'ticket_scanner_custom_admins_v1';
 
 export let sheet2AuthUrl = localStorage.getItem(STORAGE_SHEET2_URL_KEY) || '';
 
-/**
- * Computes SHA-256 hash of a plain text password using native Web Crypto API.
- */
-export async function hashPassword(password) {
-  if (!password) return '';
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// System Built-in Accounts (Password hashes precomputed for maximum security)
+// System Fallback Accounts (Instant access offline or before Sheet 2 URL is loaded)
 const SYSTEM_ACCOUNTS = [
   {
     username: 'rjulappa@gitam.in',
     name: 'R. Julappa',
-    role: 'ticketing', // Gatekeeper ticketing access
-    passwordHash: '34849f5f22e3d3bba2c581c9e69bd1689e90e475151074e017e885e0c0d28bc6' // 110120
+    role: 'ticketing',
+    password: '110120'
   },
   {
     username: 'pamarnat@gitam.edu',
     name: 'P. Amarnath',
-    role: 'admin', // Admin access (can create student participants for Sheet 3)
-    passwordHash: '75bc69e39686661305c8fcb648280fd42819ba9eb23a100532bff95836896a85' // 67pamarnat67
+    role: 'admin',
+    password: '67pamarnat67'
   },
   {
     username: 'directorcampuslife_blr@gitam.edu',
     name: 'Director Campus Life (BLR)',
-    role: 'super_admin', // Super Admin (Overall head, create admins & students)
-    passwordHash: '9bc049266c7ce3be2db8687e37fff212669b396fa5a69c9ecbc189e79136d772' // DoCLEncoreGitam
+    role: 'super_admin',
+    password: 'DoCLEncoreGitam'
   }
 ];
 
@@ -50,24 +37,9 @@ class AuthManager {
 
   initAccounts() {
     this.authUsers.clear();
-    
-    // 1. Add System Built-in Accounts
     SYSTEM_ACCOUNTS.forEach(acc => {
       this.authUsers.set(acc.username.toLowerCase(), acc);
     });
-
-    // 2. Add Custom Admins created by Super Admin from localStorage
-    try {
-      const custom = localStorage.getItem(STORAGE_CUSTOM_ADMINS_KEY);
-      if (custom) {
-        const parsed = JSON.parse(custom);
-        parsed.forEach(acc => {
-          this.authUsers.set(acc.username.toLowerCase(), acc);
-        });
-      }
-    } catch (e) {
-      console.error('Failed to load custom admin accounts:', e);
-    }
   }
 
   initSession() {
@@ -103,7 +75,11 @@ class AuthManager {
   }
 
   /**
-   * Loads user accounts from Sheet 2 CSV if published
+   * Reads credentials directly from Sheet 2 CSV
+   * Expected columns:
+   * Col 1: email id
+   * Col 2: role (super admin, admin, security)
+   * Col 3: password
    */
   async loadAuthSheet(url = sheet2AuthUrl) {
     if (!url) return { success: false, count: 0 };
@@ -117,26 +93,35 @@ class AuthManager {
       const csvText = await response.text();
       const { headers, records } = parseCSV(csvText);
 
-      const userCol = headers.findIndex(h => h.toLowerCase().includes('user') || h.toLowerCase().includes('email') || h.toLowerCase().includes('regd'));
-      const passCol = headers.findIndex(h => h.toLowerCase().includes('pass') || h.toLowerCase().includes('hash'));
-      const nameCol = headers.findIndex(h => h.toLowerCase().includes('name'));
+      // Re-init with default accounts first
+      this.initAccounts();
+
+      // Find column indices or fallback to positional columns
+      const emailCol = headers.findIndex(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('user') || h.toLowerCase().includes('id'));
       const roleCol = headers.findIndex(h => h.toLowerCase().includes('role'));
+      const passCol = headers.findIndex(h => h.toLowerCase().includes('pass'));
 
       records.forEach(r => {
         const rawRow = r.rawRow || [];
-        const username = userCol !== -1 ? rawRow[userCol] : r.regdNo || r.name;
-        const passwordHash = passCol !== -1 ? rawRow[passCol] : '';
-        const name = nameCol !== -1 ? rawRow[nameCol] : username;
-        const role = roleCol !== -1 ? rawRow[roleCol] : 'ticketing';
+        const email = emailCol !== -1 ? rawRow[emailCol] : (rawRow[0] || r.email || r.regdNo || '');
+        const roleRaw = roleCol !== -1 ? rawRow[roleCol] : (rawRow[1] || 'security');
+        const password = passCol !== -1 ? rawRow[passCol] : (rawRow[2] || rawRow[1] || '');
 
-        if (username && passwordHash) {
-          const cleanUser = username.trim().toLowerCase();
-          const cleanHash = passwordHash.trim().toLowerCase();
-          this.authUsers.set(cleanUser, {
-            username: username.trim(),
-            passwordHash: cleanHash,
-            name: name.trim(),
-            role: role.trim() || 'ticketing'
+        if (email && password) {
+          const cleanEmail = email.trim().toLowerCase();
+          const cleanRoleStr = roleRaw.trim().toLowerCase();
+          const cleanPass = password.trim();
+
+          let normalizedRole = 'ticketing';
+          if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
+          else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
+          else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket')) normalizedRole = 'ticketing';
+
+          this.authUsers.set(cleanEmail, {
+            username: email.trim(),
+            password: cleanPass,
+            role: normalizedRole,
+            name: email.trim().split('@')[0]
           });
         }
       });
@@ -149,24 +134,21 @@ class AuthManager {
   }
 
   /**
-   * Login verification against System accounts & Sheet 2
+   * Login verification against Sheet 2 loaded credentials
    */
   async login(usernameInput, passwordInput) {
     const cleanUser = usernameInput ? usernameInput.trim().toLowerCase() : '';
     const plainPassword = passwordInput ? passwordInput.trim() : '';
 
     if (!cleanUser || !plainPassword) {
-      return { success: false, error: 'Please enter both username and password.' };
+      return { success: false, error: 'Please enter both email and password.' };
     }
 
-    const computedHash = await hashPassword(plainPassword);
-
-    // Look up user in authUsers map
+    // Direct match against Sheet 2 accounts
     if (this.authUsers.has(cleanUser)) {
       const userObj = this.authUsers.get(cleanUser);
-      const storedHash = userObj.passwordHash.toLowerCase();
-
-      if (storedHash === computedHash || storedHash === plainPassword.toLowerCase()) {
+      
+      if (userObj.password === plainPassword) {
         const session = {
           username: userObj.username,
           name: userObj.name,
@@ -179,61 +161,7 @@ class AuthManager {
       }
     }
 
-    return { success: false, error: 'Invalid username or password.' };
-  }
-
-  /**
-   * Create a new Admin or Gatekeeper account (Super Admin capability)
-   */
-  async createAdminAccount(username, plainPassword, role = 'admin', name = '') {
-    if (!this.hasRole('super_admin')) {
-      return { success: false, error: 'Permission denied. Only Super Admin can create new admin accounts.' };
-    }
-
-    const cleanUser = username.trim().toLowerCase();
-    if (!cleanUser || !plainPassword) {
-      return { success: false, error: 'Username and Password are required.' };
-    }
-
-    const passwordHash = await hashPassword(plainPassword.trim());
-
-    const newAcc = {
-      username: username.trim(),
-      name: name.trim() || username.trim(),
-      role: role,
-      passwordHash: passwordHash
-    };
-
-    this.authUsers.set(cleanUser, newAcc);
-
-    // Save custom accounts to localStorage
-    try {
-      const existingCustom = JSON.parse(localStorage.getItem(STORAGE_CUSTOM_ADMINS_KEY) || '[]');
-      const filtered = existingCustom.filter(a => a.username.toLowerCase() !== cleanUser);
-      filtered.push(newAcc);
-      localStorage.setItem(STORAGE_CUSTOM_ADMINS_KEY, JSON.stringify(filtered));
-    } catch (e) {
-      console.error('Failed to save custom admin account:', e);
-    }
-
-    // Sync to Google Apps Script Sheet 2 if configured
-    const scriptUrl = localStorage.getItem('ticket_scanner_apps_script_url_v1');
-    if (scriptUrl) {
-      fetch(scriptUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'addAdmin',
-          username: newAcc.username,
-          passwordHash: newAcc.passwordHash,
-          role: newAcc.role,
-          name: newAcc.name
-        })
-      }).catch(err => console.warn('Failed to sync to Apps Script Sheet 2:', err));
-    }
-
-    return { success: true, account: newAcc };
+    return { success: false, error: 'Invalid email or password.' };
   }
 
   logout() {
