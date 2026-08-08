@@ -4,7 +4,7 @@ import { auth, sheet2AuthUrl } from './auth.js';
 import { playSuccessSound, playAlreadyEnteredSound, playInvalidSound, isAudioMuted, toggleAudioMute } from './sound.js';
 import { initScanner, stopScanner, toggleTorch, switchCamera, resetScanCooldown } from './scanner.js';
 
-let activeTab = 'scanner'; // 'scanner' | 'manual' | 'log'
+let activeTab = 'scanner'; // 'scanner' | 'manual' | 'log' | 'addStudent' | 'adminMgmt'
 let manualSearchQuery = '';
 let logSearchQuery = '';
 
@@ -15,6 +15,8 @@ export function renderApp(rootEl) {
   }
 
   const currentUser = auth.getCurrentUser();
+  const isAdmin = auth.hasRole('admin');
+  const isSuperAdmin = auth.hasRole('super_admin');
 
   rootEl.innerHTML = `
     <div class="app-container">
@@ -32,6 +34,7 @@ export function renderApp(rootEl) {
           <div>
             <h1 class="brand-title">Gitam Ticket Scanner</h1>
             <div class="brand-sub" id="sheetSyncBadge">
+              <span class="role-pill role-${currentUser.role}">${getRoleLabel(currentUser.role)}</span>
               <span class="pulse-dot"></span> <span id="syncStatusText">Connecting...</span>
             </div>
           </div>
@@ -50,7 +53,7 @@ export function renderApp(rootEl) {
               <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16"></path>
             </svg>
           </button>
-          <button id="logoutBtn" class="icon-btn logout-icon-btn" title="Logout (${escapeHtml(currentUser.username)})">
+          <button id="logoutBtn" class="icon-btn logout-icon-btn" title="Logout (${escapeHtml(currentUser.name)})">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
               <polyline points="16 17 21 12 16 7"></polyline>
@@ -87,24 +90,36 @@ export function renderApp(rootEl) {
 
       <!-- NAVIGATION TABS -->
       <nav class="nav-tabs">
-        <button class="tab-btn active" data-tab="scanner">
+        <button class="tab-btn ${activeTab === 'scanner' ? 'active' : ''}" data-tab="scanner">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           Scanner
         </button>
-        <button class="tab-btn" data-tab="manual">
+        <button class="tab-btn ${activeTab === 'manual' ? 'active' : ''}" data-tab="manual">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           Manual Search
         </button>
-        <button class="tab-btn" data-tab="log">
+        <button class="tab-btn ${activeTab === 'log' ? 'active' : ''}" data-tab="log">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          History Log
+          Log
         </button>
+
+        ${isAdmin ? `
+        <button class="tab-btn ${activeTab === 'addStudent' ? 'active' : ''}" data-tab="addStudent" title="Create Student Participant (Sheet 3)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
+          + Participant
+        </button>` : ''}
+
+        ${isSuperAdmin ? `
+        <button class="tab-btn ${activeTab === 'adminMgmt' ? 'active' : ''}" data-tab="adminMgmt" title="Manage Admins">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          + Admins
+        </button>` : ''}
       </nav>
 
       <!-- MAIN CONTENT VIEW -->
       <main class="main-content">
         <!-- SCANNER VIEW -->
-        <div id="scannerTab" class="tab-content active">
+        <div id="scannerTab" class="tab-content ${activeTab === 'scanner' ? 'active' : ''}">
           <div class="camera-card">
             <div class="camera-header">
               <span class="camera-status">
@@ -139,7 +154,7 @@ export function renderApp(rootEl) {
         </div>
 
         <!-- MANUAL SEARCH TAB -->
-        <div id="manualTab" class="tab-content">
+        <div id="manualTab" class="tab-content ${activeTab === 'manual' ? 'active' : ''}">
           <div class="search-box-card">
             <div class="search-input-wrapper">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -154,7 +169,7 @@ export function renderApp(rootEl) {
         </div>
 
         <!-- HISTORY LOG TAB -->
-        <div id="logTab" class="tab-content">
+        <div id="logTab" class="tab-content ${activeTab === 'log' ? 'active' : ''}">
           <div class="log-actions-bar">
             <input type="text" id="logSearchInput" placeholder="Filter checked-in log..." class="log-search-input">
             <div class="btn-group">
@@ -169,6 +184,102 @@ export function renderApp(rootEl) {
             <!-- Dynamically populated -->
           </div>
         </div>
+
+        <!-- ADMIN TAB: ADD STUDENT PARTICIPANT (SHEET 3) -->
+        ${isAdmin ? `
+        <div id="addStudentTab" class="tab-content ${activeTab === 'addStudent' ? 'active' : ''}">
+          <div class="admin-card">
+            <h3 class="admin-card-title">Create Student Participant (Sheet 3)</h3>
+            <p class="admin-card-desc">Add new registered participants directly to the live scanner database & Sheet 3.</p>
+
+            <form id="addStudentForm" class="admin-form">
+              <div class="form-group">
+                <label>Regd No (Required)</label>
+                <input type="text" id="newRegdNo" placeholder="e.g. 2026998877" required class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Student Full Name</label>
+                <input type="text" id="newName" placeholder="e.g. K. Vamsi Krishna" required class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Gitam Student Email</label>
+                <input type="email" id="newEmail" placeholder="e.g. kvamsi@student.gitam.edu" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Mobile Number</label>
+                <input type="text" id="newMobile" placeholder="e.g. 9876543210" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Department / Education Info</label>
+                <input type="text" id="newCampusInfo" placeholder="e.g. BLR / GSCSE / CSE / BTECH / I Yr" class="form-control">
+              </div>
+
+              <div id="addStudentMsg" class="admin-msg hidden"></div>
+
+              <button type="submit" class="action-btn primary-btn add-btn-full">
+                + Register Participant (Sheet 3)
+              </button>
+            </form>
+
+            <div class="sheet3-export-box">
+              <h4>Sheet 3 Participant List (${store.sheet3NewStudents.length})</h4>
+              <button id="copySheet3CsvBtn" class="action-btn secondary-btn">Copy Sheet 3 CSV Data</button>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <!-- SUPER ADMIN TAB: MANAGE ADMINS -->
+        ${isSuperAdmin ? `
+        <div id="adminMgmtTab" class="tab-content ${activeTab === 'adminMgmt' ? 'active' : ''}">
+          <div class="admin-card">
+            <h3 class="admin-card-title">Manage Admins & Staff</h3>
+            <p class="admin-card-desc">Super Admin feature: Create new Admin or Gatekeeper accounts (SHA-256 Encrypted).</p>
+
+            <form id="addAdminForm" class="admin-form">
+              <div class="form-group">
+                <label>Admin Email / Username</label>
+                <input type="text" id="adminUser" placeholder="e.g. staff_member@gitam.edu" required class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Staff Full Name</label>
+                <input type="text" id="adminName" placeholder="e.g. Dr. Ramesh Kumar" class="form-control">
+              </div>
+              <div class="form-group">
+                <label>Access Role</label>
+                <select id="adminRole" class="form-control">
+                  <option value="admin">Admin (Can create students for Sheet 3)</option>
+                  <option value="ticketing">Ticketing Staff (Scanner only)</option>
+                  <option value="super_admin">Super Admin (Full system control)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Password (Auto SHA-256 Hashed)</label>
+                <input type="password" id="adminPass" placeholder="Enter password for staff" required class="form-control">
+              </div>
+
+              <div id="addAdminMsg" class="admin-msg hidden"></div>
+
+              <button type="submit" class="action-btn primary-btn add-btn-full">
+                + Create Staff Account
+              </button>
+            </form>
+
+            <div class="admin-accounts-list">
+              <h4>Current Authorized Accounts (${auth.authUsers.size})</h4>
+              <div class="account-items">
+                ${Array.from(auth.authUsers.values()).map(a => `
+                  <div class="acc-item">
+                    <div>
+                      <div class="acc-name">${escapeHtml(a.name || a.username)}</div>
+                      <div class="acc-sub">${escapeHtml(a.username)}</div>
+                    </div>
+                    <span class="role-pill role-${a.role}">${getRoleLabel(a.role)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>` : ''}
       </main>
 
       <!-- TOP-LEVEL SCAN RESULT OVERLAY MODAL -->
@@ -197,6 +308,12 @@ export function renderApp(rootEl) {
   });
 }
 
+function getRoleLabel(role) {
+  if (role === 'super_admin') return 'Super Admin';
+  if (role === 'admin') return 'Admin';
+  return 'Ticketing';
+}
+
 /**
  * Render VIP Login Screen
  */
@@ -214,15 +331,15 @@ function renderLoginScreen(rootEl) {
             </svg>
           </div>
           <h2 class="login-title">GITAM VIP SCANNER</h2>
-          <p class="login-subtitle">Gatekeeper Authentication System</p>
+          <p class="login-subtitle">Gatekeeper & Admin Authentication</p>
         </div>
 
         <form id="loginForm" class="login-form">
           <div class="form-group">
-            <label for="loginUser">Username / Regd ID</label>
+            <label for="loginUser">Email / Username</label>
             <div class="login-input-box">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              <input type="text" id="loginUser" placeholder="Enter username or Regd No" required autocomplete="username">
+              <input type="text" id="loginUser" placeholder="e.g. rjulappa@gitam.in" required autocomplete="username">
             </div>
           </div>
 
@@ -241,18 +358,14 @@ function renderLoginScreen(rootEl) {
           </button>
         </form>
 
-        <!-- SHEET 2 AUTH SOURCE ACCORDION -->
-        <details class="sheet2-details">
-          <summary class="sheet2-summary">
-            🔒 Sheet 2 Auth Configuration
-          </summary>
-          <div class="sheet2-body">
-            <label for="sheet2UrlInput">Sheet 2 Auth CSV Published URL</label>
-            <input type="text" id="sheet2UrlInput" class="form-control" placeholder="https://docs.google.com/.../pub?gid=SHEET2_GID&output=csv" value="${sheet2AuthUrl}">
-            <button id="saveSheet2Btn" class="action-btn secondary-btn sheet2-save-btn">Save Sheet 2 URL</button>
-            <p class="sheet2-hint">Passwords are stored in Sheet 2 as SHA-256 hashes for max security.</p>
-          </div>
-        </details>
+        <div class="login-accounts-info">
+          <p><strong>System Accounts Available:</strong></p>
+          <ul>
+            <li><code>rjulappa@gitam.in</code> (Ticketing)</li>
+            <li><code>pamarnat@gitam.edu</code> (Admin - Sheet 3)</li>
+            <li><code>directorcampuslife_blr@gitam.edu</code> (Super Admin)</li>
+          </ul>
+        </div>
       </div>
     </div>
   `;
@@ -260,24 +373,6 @@ function renderLoginScreen(rootEl) {
   // Attach Login listeners
   const loginForm = document.getElementById('loginForm');
   const loginError = document.getElementById('loginError');
-
-  // Pre-load Sheet 2 if configured
-  if (sheet2AuthUrl) {
-    auth.loadAuthSheet(sheet2AuthUrl);
-  }
-
-  document.getElementById('saveSheet2Btn')?.addEventListener('click', async (e) => {
-    e.preventDefault();
-    const input = document.getElementById('sheet2UrlInput');
-    if (input && input.value.trim()) {
-      const res = await auth.loadAuthSheet(input.value.trim());
-      if (res.success) {
-        alert(`Sheet 2 loaded successfully! Found ${res.count} auth accounts.`);
-      } else {
-        alert(`Could not load Sheet 2: ${res.error || 'Check URL/GID'}`);
-      }
-    }
-  });
 
   loginForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -443,8 +538,82 @@ function attachEventListeners(rootEl) {
     }
   });
 
+  // Add Student Form (Admin / Super Admin)
+  const addStudentForm = document.getElementById('addStudentForm');
+  const addStudentMsg = document.getElementById('addStudentMsg');
+
+  addStudentForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const regdNo = document.getElementById('newRegdNo').value;
+    const name = document.getElementById('newName').value;
+    const email = document.getElementById('newEmail').value;
+    const mobile = document.getElementById('newMobile').value;
+    const campusInfo = document.getElementById('newCampusInfo').value;
+
+    const res = store.addSheet3Student({ regdNo, name, email, mobile, campusInfo });
+    if (res.success) {
+      if (addStudentMsg) {
+        addStudentMsg.className = 'admin-msg success-msg';
+        addStudentMsg.textContent = `✓ Student ${name} (${regdNo}) registered successfully! Added to live scanner & Sheet 3 database.`;
+        addStudentMsg.classList.remove('hidden');
+      }
+      addStudentForm.reset();
+    } else {
+      if (addStudentMsg) {
+        addStudentMsg.className = 'admin-msg error-msg';
+        addStudentMsg.textContent = res.error || 'Failed to add student';
+        addStudentMsg.classList.remove('hidden');
+      }
+    }
+  });
+
+  // Copy Sheet 3 CSV
+  document.getElementById('copySheet3CsvBtn')?.addEventListener('click', () => {
+    const rows = [
+      ['Regd no.', 'Name', 'Email', 'Mobile', 'Education/Campus Info', 'Status']
+    ];
+    store.sheet3NewStudents.forEach(s => {
+      rows.push([`"${s.regdNo}"`, `"${s.name}"`, `"${s.email}"`, `"${s.mobile}"`, `"${s.campusInfo}"`, `"Approved"`]);
+    });
+
+    const csvText = rows.map(r => r.join(',')).join('\n');
+    navigator.clipboard.writeText(csvText);
+    alert(`Copied ${store.sheet3NewStudents.length} Sheet 3 participant records to clipboard!`);
+  });
+
+  // Add Admin Form (Super Admin)
+  const addAdminForm = document.getElementById('addAdminForm');
+  const addAdminMsg = document.getElementById('addAdminMsg');
+
+  addAdminForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const user = document.getElementById('adminUser').value;
+    const name = document.getElementById('adminName').value;
+    const role = document.getElementById('adminRole').value;
+    const pass = document.getElementById('adminPass').value;
+
+    const res = await auth.createAdminAccount(user, pass, role, name);
+    if (res.success) {
+      if (addAdminMsg) {
+        addAdminMsg.className = 'admin-msg success-msg';
+        addAdminMsg.textContent = `✓ Admin Account ${user} created successfully with SHA-256 encryption!`;
+        addAdminMsg.classList.remove('hidden');
+      }
+      addAdminForm.reset();
+      setTimeout(() => renderApp(rootEl), 1200);
+    } else {
+      if (addAdminMsg) {
+        addAdminMsg.className = 'admin-msg error-msg';
+        addAdminMsg.textContent = res.error || 'Failed to create admin';
+        addAdminMsg.classList.remove('hidden');
+      }
+    }
+  });
+
   // Start scanner initially if on scanner tab
-  startCameraScanner();
+  if (activeTab === 'scanner') {
+    startCameraScanner();
+  }
 }
 
 async function startCameraScanner() {
@@ -681,7 +850,7 @@ function renderManualSearch() {
     return `
       <div class="student-list-item ${isChecked ? 'item-checked' : ''}">
         <div class="item-info">
-          <div class="item-name">${escapeHtml(s.name)}</div>
+          <div class="item-name">${escapeHtml(s.name)} ${s.source ? `<span class="source-tag">${escapeHtml(s.source)}</span>` : ''}</div>
           <div class="item-meta">
             <span class="meta-regd">Regd: ${escapeHtml(s.regdNo)}</span>
             ${s.campusInfo ? `<span class="meta-dept">${escapeHtml(s.campusInfo)}</span>` : ''}

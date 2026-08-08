@@ -5,12 +5,15 @@ const STORAGE_CACHED_STUDENTS_KEY = 'ticket_scanner_students_cache_v1';
 const STORAGE_CHECKED_IN_KEY = 'ticket_scanner_checked_in_v2';
 const STORAGE_LAST_SYNC_KEY = 'ticket_scanner_last_sync_v1';
 
+const STORAGE_SHEET3_NEW_STUDENTS_KEY = 'ticket_scanner_sheet3_new_students_v1';
+
 export const DEFAULT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKcsBYzsbP8O58BtbGOvLb5FcHaRc6jDMXn56p9DrbWPohyPs6Le1zomLNaFXRhzApZ7HZ8lEVm17Y/pub?output=csv';
 
 class Store {
   constructor() {
     this.sheetUrl = localStorage.getItem(STORAGE_SHEET_URL_KEY) || DEFAULT_SHEET_URL;
     this.students = [];
+    this.sheet3NewStudents = []; // Admin created students (Sheet 3)
     this.studentMap = new Map(); // regdNo -> student
     this.emailMap = new Map();   // email -> student
     this.mobileMap = new Map();  // mobile -> student
@@ -42,6 +45,16 @@ class Store {
       console.error('Failed to load checked-in state:', e);
     }
 
+    // Load Sheet 3 custom new students created by Admins
+    try {
+      const savedSheet3 = localStorage.getItem(STORAGE_SHEET3_NEW_STUDENTS_KEY);
+      if (savedSheet3) {
+        this.sheet3NewStudents = JSON.parse(savedSheet3);
+      }
+    } catch (e) {
+      console.error('Failed to load Sheet 3 students:', e);
+    }
+
     // Load cached students if available
     try {
       const cached = localStorage.getItem(STORAGE_CACHED_STUDENTS_KEY);
@@ -64,12 +77,20 @@ class Store {
   }
 
   setStudents(studentList, saveCache = true) {
-    this.students = studentList;
+    // Combine Sheet 1 list with Sheet 3 custom admin-created participants
+    const mergedList = [...studentList];
+    this.sheet3NewStudents.forEach(s => {
+      if (!mergedList.some(existing => existing.regdNo.toLowerCase() === s.regdNo.toLowerCase())) {
+        mergedList.push(s);
+      }
+    });
+
+    this.students = mergedList;
     this.studentMap.clear();
     this.emailMap.clear();
     this.mobileMap.clear();
 
-    studentList.forEach(student => {
+    mergedList.forEach(student => {
       if (student.regdNo) {
         this.studentMap.set(student.regdNo.toLowerCase(), student);
       }
@@ -81,7 +102,7 @@ class Store {
       }
     });
 
-    this.syncState.totalCount = studentList.length;
+    this.syncState.totalCount = mergedList.length;
 
     if (saveCache) {
       try {
@@ -92,6 +113,44 @@ class Store {
     }
 
     this.notify();
+  }
+
+  addSheet3Student(student) {
+    if (!student || !student.regdNo) return { success: false, error: 'Registration Number is required.' };
+    const cleanRegd = student.regdNo.trim();
+
+    if (this.studentMap.has(cleanRegd.toLowerCase())) {
+      return { success: false, error: `Student with Regd No ${cleanRegd} already exists.` };
+    }
+
+    const newStudent = {
+      regdNo: cleanRegd,
+      name: student.name || 'New Participant',
+      email: student.email || '',
+      mobile: student.mobile || '',
+      campusInfo: student.campusInfo || 'Added by Admin',
+      event: student.event || 'Esperanza - Encore 26',
+      status: 'Approved',
+      source: 'Sheet 3 (Admin Created)',
+      createdAt: new Date().toISOString()
+    };
+
+    this.sheet3NewStudents.push(newStudent);
+    try {
+      localStorage.setItem(STORAGE_SHEET3_NEW_STUDENTS_KEY, JSON.stringify(this.sheet3NewStudents));
+    } catch (e) {
+      console.error('Failed to save Sheet 3 student:', e);
+    }
+
+    // Include in active student list immediately
+    this.students.push(newStudent);
+    this.studentMap.set(cleanRegd.toLowerCase(), newStudent);
+    if (newStudent.email) this.emailMap.set(newStudent.email.toLowerCase(), newStudent);
+    if (newStudent.mobile) this.mobileMap.set(newStudent.mobile.replace(/\D/g, ''), newStudent);
+    
+    this.syncState.totalCount = this.students.length;
+    this.notify();
+    return { success: true, student: newStudent };
   }
 
   async loadSheetData(url = this.sheetUrl) {
