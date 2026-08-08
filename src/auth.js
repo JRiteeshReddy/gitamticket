@@ -1,4 +1,5 @@
 import { parseCSV } from './csvParser.js';
+import { appsScriptUrl } from './store.js';
 
 const STORAGE_AUTH_SESSION_KEY = 'ticket_scanner_auth_session_v1';
 const STORAGE_SHEET2_URL_KEY = 'ticket_scanner_sheet2_url_v1';
@@ -80,62 +81,94 @@ class AuthManager {
   }
 
   /**
-   * Reads credentials directly from Sheet 2 CSV
-   * Expected columns:
-   * Col 1: email id
-   * Col 2: role (super admin, admin, security)
-   * Col 3: password
+   * Reads credentials directly from Sheet 2 pubhtml & Apps Script live endpoint
    */
   async loadAuthSheet(url = sheet2AuthUrl) {
     if (!url) return { success: false, count: 0 };
     this.setSheet2Url(url);
 
+    // Re-init with default accounts first
+    this.initAccounts();
+
+    // 1. Fetch from pubhtml Sheet 2 endpoint
     try {
       const fetchUrl = url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`;
       const response = await fetch(fetchUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}: Failed to fetch Sheet 2`);
+      if (response.ok) {
+        const csvText = await response.text();
+        const { headers, records } = parseCSV(csvText);
 
-      const csvText = await response.text();
-      const { headers, records } = parseCSV(csvText);
+        const emailCol = headers.findIndex(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('user') || h.toLowerCase().includes('id'));
+        const roleCol = headers.findIndex(h => h.toLowerCase().includes('role'));
+        const passCol = headers.findIndex(h => h.toLowerCase().includes('pass'));
 
-      // Re-init with default accounts first
-      this.initAccounts();
+        records.forEach(r => {
+          const rawRow = r.rawRow || [];
+          const email = emailCol !== -1 ? rawRow[emailCol] : (rawRow[0] || r.email || r.regdNo || '');
+          const roleRaw = roleCol !== -1 ? rawRow[roleCol] : (rawRow[1] || 'security');
+          const password = passCol !== -1 ? rawRow[passCol] : (rawRow[2] || rawRow[1] || '');
 
-      const emailCol = headers.findIndex(h => h.toLowerCase().includes('email') || h.toLowerCase().includes('user') || h.toLowerCase().includes('id'));
-      const roleCol = headers.findIndex(h => h.toLowerCase().includes('role'));
-      const passCol = headers.findIndex(h => h.toLowerCase().includes('pass'));
+          if (email && password) {
+            const cleanEmail = email.trim().toLowerCase();
+            const cleanRoleStr = roleRaw.trim().toLowerCase();
+            const cleanPass = password.trim();
 
-      records.forEach(r => {
-        const rawRow = r.rawRow || [];
-        const email = emailCol !== -1 ? rawRow[emailCol] : (rawRow[0] || r.email || r.regdNo || '');
-        const roleRaw = roleCol !== -1 ? rawRow[roleCol] : (rawRow[1] || 'security');
-        const password = passCol !== -1 ? rawRow[passCol] : (rawRow[2] || rawRow[1] || '');
+            let normalizedRole = 'ticketing';
+            if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
+            else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
+            else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket') || cleanRoleStr.includes('gatekeeper')) normalizedRole = 'ticketing';
 
-        if (email && password) {
-          const cleanEmail = email.trim().toLowerCase();
-          const cleanRoleStr = roleRaw.trim().toLowerCase();
-          const cleanPass = password.trim();
-
-          let normalizedRole = 'ticketing';
-          if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
-          else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
-          else if (cleanRoleStr.includes('security') || cleanRoleStr.includes('ticket') || cleanRoleStr.includes('gatekeeper')) normalizedRole = 'ticketing';
-
-          this.authUsers.set(cleanEmail, {
-            username: email.trim(),
-            password: cleanPass,
-            role: normalizedRole,
-            rawRole: roleRaw.trim(), // Exact role string from Sheet 2
-            name: email.trim().split('@')[0]
-          });
-        }
-      });
-
-      return { success: true, count: this.authUsers.size };
+            this.authUsers.set(cleanEmail, {
+              username: email.trim(),
+              password: cleanPass,
+              role: normalizedRole,
+              rawRole: roleRaw.trim(),
+              name: email.trim().split('@')[0]
+            });
+          }
+        });
+      }
     } catch (err) {
-      console.warn('Failed to load Sheet 2 auth users:', err);
-      return { success: false, error: err.message };
+      console.warn('pubhtml Sheet 2 fetch fallback:', err);
     }
+
+    // 2. Fetch from Apps Script Live Memory Endpoint (0-second delay for newly added accounts in Sheet 2)
+    if (appsScriptUrl) {
+      try {
+        const scriptRes = await fetch(`${appsScriptUrl}?action=getAccounts&_t=${Date.now()}`);
+        if (scriptRes.ok) {
+          const json = await scriptRes.json();
+          if (json && json.accounts && Array.isArray(json.accounts)) {
+            json.accounts.forEach((row, idx) => {
+              if (idx === 0 && row.some(cell => String(cell).toLowerCase().includes('email'))) return; // skip header
+              const email = String(row[0] || '').trim();
+              const roleRaw = String(row[1] || 'security').trim();
+              const password = String(row[2] || '').trim();
+
+              if (email && password) {
+                const cleanEmail = email.toLowerCase();
+                const cleanRoleStr = roleRaw.toLowerCase();
+                let normalizedRole = 'ticketing';
+                if (cleanRoleStr.includes('super')) normalizedRole = 'super_admin';
+                else if (cleanRoleStr.includes('admin')) normalizedRole = 'admin';
+
+                this.authUsers.set(cleanEmail, {
+                  username: email,
+                  password: password,
+                  role: normalizedRole,
+                  rawRole: roleRaw,
+                  name: email.split('@')[0]
+                });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Apps Script live accounts query fallback:', e);
+      }
+    }
+
+    return { success: true, count: this.authUsers.size };
   }
 
   /**
