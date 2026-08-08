@@ -506,8 +506,10 @@ function attachEventListeners(rootEl) {
   });
 
   // Refresh Sync Button
-  document.getElementById('syncRefreshBtn')?.addEventListener('click', () => {
-    store.loadSheetData();
+  document.getElementById('syncRefreshBtn')?.addEventListener('click', async () => {
+    await auth.loadAuthSheet();
+    await store.loadSheetData();
+    renderApp(rootEl);
   });
 
   // Torch & Flip Camera Controls

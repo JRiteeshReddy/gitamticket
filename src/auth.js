@@ -179,6 +179,17 @@ class AuthManager {
       }
     }
 
+    // Auto-update active session if user role was changed in Google Sheets
+    if (this.currentUser && this.currentUser.username) {
+      const activeEmail = this.currentUser.username.toLowerCase();
+      if (this.authUsers.has(activeEmail)) {
+        const freshObj = this.authUsers.get(activeEmail);
+        this.currentUser.role = freshObj.role;
+        this.currentUser.rawRole = freshObj.rawRole;
+        localStorage.setItem(STORAGE_AUTH_SESSION_KEY, JSON.stringify(this.currentUser));
+      }
+    }
+
     return { success: true, count: this.authUsers.size };
   }
 
