@@ -7,6 +7,7 @@ import { initScanner, stopScanner, toggleTorch, switchCamera, resetScanCooldown 
 let activeTab = 'scanner'; // 'scanner' | 'manual' | 'log' | 'addStudent' | 'adminMgmt'
 let manualSearchQuery = '';
 let logSearchQuery = '';
+let superAdminLogSearchQuery = '';
 
 export function renderApp(rootEl) {
   if (!auth.isAuthenticated()) {
@@ -228,10 +229,33 @@ export function renderApp(rootEl) {
           </div>
         </div>` : ''}
 
-        <!-- SUPER ADMIN TAB: MANAGE ADMINS -->
+        <!-- SUPER ADMIN TAB: MANAGE ADMINS & LIVE CHECKED-IN DIRECTORY -->
         ${isSuperAdmin ? `
         <div id="adminMgmtTab" class="tab-content ${activeTab === 'adminMgmt' ? 'active' : ''}">
+          <!-- LIVE CHECKED-IN MASTER DIRECTORY (SUPER ADMIN AUDIT) -->
           <div class="admin-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div>
+                <h3 class="admin-card-title">Live Checked-In Master Directory</h3>
+                <p class="admin-card-desc">Real-time audit log of all checked-in tickets across all gatekeeper accounts.</p>
+              </div>
+              <button id="superAdminExportBtn" class="action-btn secondary-btn" style="padding: 6px 14px; font-size: 0.8rem;">
+                📥 Export CSV
+              </button>
+            </div>
+
+            <div class="search-input-wrapper" style="margin-bottom: 12px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="superAdminCheckInSearch" placeholder="Filter checked-in tickets by Regd No, Name, Email..." class="form-control">
+            </div>
+
+            <div id="superAdminCheckedInList" class="log-list" style="max-height: 420px; overflow-y: auto;">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- MANAGE ADMINS & STAFF -->
+          <div class="admin-card" style="margin-top: 16px;">
             <h3 class="admin-card-title">Manage Admins & Staff</h3>
             <p class="admin-card-desc">Super Admin feature: Create new Admin or Gatekeeper accounts (SHA-256 Encrypted).</p>
 
@@ -316,6 +340,7 @@ export function renderApp(rootEl) {
     updateSyncBadge();
     if (activeTab === 'manual') renderManualSearch();
     if (activeTab === 'log') renderHistoryLog();
+    if (activeTab === 'adminMgmt') renderSuperAdminCheckedInList();
   });
 }
 
@@ -496,6 +521,7 @@ function attachEventListeners(rootEl) {
 
       if (activeTab === 'manual') renderManualSearch();
       if (activeTab === 'log') renderHistoryLog();
+      if (activeTab === 'adminMgmt') renderSuperAdminCheckedInList();
     });
   });
 
@@ -549,6 +575,16 @@ function attachEventListeners(rootEl) {
   document.getElementById('logSearchInput')?.addEventListener('input', (e) => {
     logSearchQuery = e.target.value;
     renderHistoryLog();
+  });
+
+  // Super Admin Checked-In Search Input & Export
+  document.getElementById('superAdminCheckInSearch')?.addEventListener('input', (e) => {
+    superAdminLogSearchQuery = e.target.value;
+    renderSuperAdminCheckedInList();
+  });
+
+  document.getElementById('superAdminExportBtn')?.addEventListener('click', () => {
+    store.exportCSV();
   });
 
   // Reset Session
@@ -987,6 +1023,66 @@ function renderHistoryLog() {
       if (regd) {
         store.undoCheckIn(regd);
         renderHistoryLog();
+      }
+    });
+  });
+}
+
+/**
+ * Render Super Admin Live Checked-In Directory
+ */
+function renderSuperAdminCheckedInList() {
+  const container = document.getElementById('superAdminCheckedInList');
+  if (!container) return;
+
+  const entries = Array.from(store.checkedInMap.values()).reverse();
+  const query = superAdminLogSearchQuery.trim().toLowerCase();
+
+  let filtered = entries;
+  if (query) {
+    filtered = entries.filter(e => {
+      const s = e.student || {};
+      return (
+        (e.regdNo && e.regdNo.toLowerCase().includes(query)) ||
+        (s.name && s.name.toLowerCase().includes(query)) ||
+        (s.email && s.email.toLowerCase().includes(query)) ||
+        (s.mobile && String(s.mobile).includes(query))
+      );
+    });
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <p>${query ? 'No checked-in student matches your query.' : 'No tickets checked in yet. Live scans will appear here automatically.'}</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = filtered.map(entry => {
+    const s = entry.student || {};
+    return `
+      <div class="log-item">
+        <div class="log-time">${escapeHtml(entry.scannedAt || 'Just now')}</div>
+        <div class="log-student">
+          <div class="log-name">${escapeHtml(s.name || 'Unknown Student')}</div>
+          <div class="log-sub">Regd: <strong>${escapeHtml(entry.regdNo)}</strong> • ${escapeHtml(s.campusInfo || 'N/A')}</div>
+          ${s.email ? `<div class="log-sub" style="opacity: 0.8; margin-top: 2px;">Email: ${escapeHtml(s.email)} ${s.mobile ? `• Mobile: ${escapeHtml(s.mobile)}` : ''}</div>` : ''}
+        </div>
+        <div class="log-method">${escapeHtml(entry.method || 'QR Scan')}</div>
+        <button class="log-undo-btn super-admin-undo" data-regd="${escapeHtml(entry.regdNo)}" title="Undo Entry">&times;</button>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('.super-admin-undo').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const regd = btn.getAttribute('data-regd');
+      if (regd && confirm(`Undo check-in entry for Registration No: ${regd}?`)) {
+        store.undoCheckIn(regd);
+        renderSuperAdminCheckedInList();
       }
     });
   });
