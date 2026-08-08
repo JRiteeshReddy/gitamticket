@@ -76,8 +76,11 @@ export function parseCSV(csvText) {
     const row = lines[i];
     if (!row || row.length === 0) continue;
 
-    const rawRegd = regdIndex !== -1 && row[regdIndex] ? row[regdIndex].trim() : '';
-    if (!rawRegd) continue;
+    let rawRegd = regdIndex !== -1 && row[regdIndex] ? row[regdIndex].trim() : '';
+    if (!rawRegd) {
+      // Fallback for general CSVs (like Sheet 2 logins or custom lists)
+      rawRegd = row[emailIndex !== -1 ? emailIndex : 0] || `ROW_${i}`;
+    }
 
     // Clean regd number (remove whitespace)
     const regdNo = rawRegd.replace(/\s+/g, '');
